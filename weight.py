@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 CSV_FILE = Path(__file__).with_name("weights.csv")
-STABLE = 0.3  # changes below this threshold (kg) count as "stable"
+STABLE = 0.1  # changes below this threshold (kg) count as "stable"
 
 
 # ---------- helpers ----------
@@ -155,39 +155,65 @@ def cmd_trend(args):
 
 # ---------- main ----------
 
-def main():
-    if sys.argv[1:2] == ["help"]:
-        sys.argv[1] = "-h"
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except AttributeError:
-        pass
-
-    p = argparse.ArgumentParser(description="Weight tracker (data stored in weights.csv).")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="{add,show,help}")
+def build_parser():
+    """Build the argument parser; also return every (title, parser) pair for the full help."""
+    p = argparse.ArgumentParser(
+        prog="weight.py",
+        description="Weight tracker (data stored in weights.csv).",
+        epilog="Run 'weight.py help' to see every command and option.",
+    )
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="{add,show}")
+    pages = [("weight.py", p)]
 
     a = sub.add_parser("add", help="add a weight (today, or use --date)")
     a.add_argument("weight", type=parse_weight, help="weight in kg, e.g. 72.5 or 72,5")
     a.add_argument("--date", type=parse_date, help="date as YYYY-MM-DD (default: today)")
     a.set_defaults(func=cmd_add)
+    pages.append(("weight.py add", a))
 
-    s = sub.add_parser("show", help="show data")
-    ss = s.add_subparsers(dest="what", required=True)
+    s = sub.add_parser("show", help="show data: last, avg, trend")
+    ss = s.add_subparsers(dest="what", required=True, metavar="{last,avg,trend}")
 
     last = ss.add_parser("last", help="list the last weeks/days (default: 4 weeks)")
     g = last.add_mutually_exclusive_group()
     g.add_argument("--days", type=int, help="last N days")
     g.add_argument("--weeks", type=int, help="last N weeks")
     last.set_defaults(func=cmd_last)
+    pages.append(("weight.py show last", last))
 
-    ss.add_parser("avg", help="overall average").set_defaults(func=cmd_avg)
+    avg = ss.add_parser("avg", help="overall average")
+    avg.set_defaults(func=cmd_avg)
+    pages.append(("weight.py show avg", avg))
 
     t = ss.add_parser("trend", help="compare averages of consecutive periods")
     t.add_argument("--by", choices=["week", "month"], default="week", help="period (default: week)")
     t.add_argument("--last", type=int, help="how many periods to show (default: 8 weeks / 6 months)")
     t.set_defaults(func=cmd_trend)
+    pages.append(("weight.py show trend", t))
 
-    args = p.parse_args()
+    return p, pages
+
+
+def print_full_help(pages):
+    print(pages[0][1].format_help())
+    for title, parser in pages[1:]:
+        print(f"=== {title} ===")
+        print(parser.format_help())
+
+
+def main():
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
+    parser, pages = build_parser()
+    # No arguments, 'help', -h or --help: show the complete reference
+    if len(sys.argv) == 1 or sys.argv[1] in ("help", "-h", "--help"):
+        print_full_help(pages)
+        return
+
+    args = parser.parse_args()
     args.func(args)
 
 
